@@ -97,7 +97,6 @@ class FastSAMPrompt:
              bboxes=None,
              points=None,
              point_label=None,
-             mask_random_color=True,
              better_quality=True,
              retina=False,
              withContours=True) -> np.ndarray:
@@ -128,7 +127,6 @@ class FastSAMPrompt:
             self.fast_show_mask(
                 annotations,
                 plt.gca(),
-                random_color=mask_random_color,
                 bboxes=bboxes,
                 points=points,
                 pointlabel=point_label,
@@ -142,7 +140,6 @@ class FastSAMPrompt:
             self.fast_show_mask_gpu(
                 annotations,
                 plt.gca(),
-                random_color=mask_random_color,
                 bboxes=bboxes,
                 points=points,
                 pointlabel=point_label,
@@ -195,7 +192,6 @@ class FastSAMPrompt:
              bboxes=None,
              points=None,
              point_label=None,
-             mask_random_color=True,
              better_quality=True,
              retina=False,
              withContours=True):
@@ -206,7 +202,6 @@ class FastSAMPrompt:
             bboxes, 
             points, 
             point_label, 
-            mask_random_color,
             better_quality, 
             retina, 
             withContours,
@@ -217,13 +212,37 @@ class FastSAMPrompt:
             os.makedirs(path)
         result = result[:, :, ::-1]
         cv2.imwrite(output_path, result)
+
+        if self.device == 'cpu':
+            mask_image_path = self.fast_show_mask(
+            annotations,
+            plt.gca(),
+            bboxes=bboxes,
+            points=points,
+            pointlabel=point_label,
+            retinamask=retina,
+            target_height=result.shape[0],
+            target_width=result.shape[1]
+            )
+        else:
+            mask_image_path = self.fast_show_mask_gpu(
+            annotations,
+            plt.gca(),
+            bboxes=bboxes,
+            points=points,
+            pointlabel=point_label,
+            retinamask=retina,
+            target_height=result.shape[0],
+            target_width=result.shape[1]
+            )
+
+        return mask_image_path
      
     #   CPU post process
     def fast_show_mask(
         self,
         annotation,
         ax,
-        random_color=False,
         bboxes=None,
         points=None,
         pointlabel=None,
@@ -231,7 +250,7 @@ class FastSAMPrompt:
         target_height=960,
         target_width=960,
     ):
-        msak_sum = annotation.shape[0]
+        mask_sum = annotation.shape[0]
         height = annotation.shape[1]
         weight = annotation.shape[2]
         #Sort annotations based on area.
@@ -240,13 +259,22 @@ class FastSAMPrompt:
         annotation = annotation[sorted_indices]
 
         index = (annotation != 0).argmax(axis=0)
-        if random_color:
-            color = np.random.random((msak_sum, 1, 1, 3))
-        else:
-            color = np.ones((msak_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 255 / 255])
-        transparency = np.ones((msak_sum, 1, 1, 1)) * 0.6
+
+        # Fixed color (e.g., red)
+        fixed_color = np.array([255 / 255, 255 / 255, 255 / 255])
+        color = np.ones((mask_sum, 1, 1, 3)) * fixed_color
+
+        transparency = np.ones((mask_sum, 1, 1, 1)) * 1
         visual = np.concatenate([color, transparency], axis=-1)
         mask_image = np.expand_dims(annotation, -1) * visual
+        annotation = np.where(annotation, 255, 0).astype(np.uint8)
+        if annotation.shape[0] == 1:
+            annotation = annotation[0]
+        output_folder = "output"
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
+        output_file_path = os.path.join(output_folder, "mask_image_mask.png")
+        cv2.imwrite(output_file_path, annotation)
 
         show = np.zeros((height, weight, 4))
         h_indices, w_indices = np.meshgrid(np.arange(height), np.arange(weight), indexing='ij')
@@ -275,12 +303,13 @@ class FastSAMPrompt:
         if not retinamask:
             show = cv2.resize(show, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
         ax.imshow(show)
+        return output_file_path
+
 
     def fast_show_mask_gpu(
         self,
         annotation,
         ax,
-        random_color=False,
         bboxes=None,
         points=None,
         pointlabel=None,
@@ -296,14 +325,24 @@ class FastSAMPrompt:
         annotation = annotation[sorted_indices]
         # Find the index of the first non-zero value at each position.
         index = (annotation != 0).to(torch.long).argmax(dim=0)
-        if random_color:
-            color = torch.rand((msak_sum, 1, 1, 3)).to(annotation.device)
-        else:
-            color = torch.ones((msak_sum, 1, 1, 3)).to(annotation.device) * torch.tensor([
-                30 / 255, 144 / 255, 255 / 255]).to(annotation.device)
-        transparency = torch.ones((msak_sum, 1, 1, 1)).to(annotation.device) * 0.6
+
+        # Fixed color (e.g., red)
+        fixed_color = torch.tensor([255 / 255, 0 / 255, 0 / 255]).to(annotation.device)
+        color = torch.ones((msak_sum, 1, 1, 3)).to(annotation.device) * fixed_color
+
+        transparency = torch.ones((msak_sum, 1, 1, 1)).to(annotation.device) * 1
         visual = torch.cat([color, transparency], dim=-1)
         mask_image = torch.unsqueeze(annotation, -1) * visual
+
+        annotation = np.where(annotation, 255, 0).astype(np.uint8)
+        if annotation.shape[0] == 1:
+            annotation = annotation[0]
+        output_folder = "output"
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
+        output_file_path = os.path.join(output_folder, "mask_image_mask.png")
+        cv2.imwrite(output_file_path, annotation)
+
         # Select data according to the index. The index indicates which batch's data to choose at each position, converting the mask_image into a single batch form.
         show = torch.zeros((height, weight, 4)).to(annotation.device)
         try:
@@ -335,6 +374,7 @@ class FastSAMPrompt:
         if not retinamask:
             show_cpu = cv2.resize(show_cpu, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
         ax.imshow(show_cpu)
+        return output_file_path
 
     # clip
     @torch.no_grad()
@@ -373,68 +413,6 @@ class FastSAMPrompt:
             cropped_images.append(bbox)  # Save the bounding box of the cropped image.
 
         return cropped_boxes, cropped_images, not_crop, filter_id, annotations
-
-    def box_prompt(self, bbox=None, bboxes=None):
-        if self.results == None:
-            return []
-        assert bbox or bboxes
-        if bboxes is None:
-            bboxes = [bbox]
-        max_iou_index = []
-        for bbox in bboxes:
-            assert (bbox[2] != 0 and bbox[3] != 0)
-            masks = self.results[0].masks.data
-            target_height = self.img.shape[0]
-            target_width = self.img.shape[1]
-            h = masks.shape[1]
-            w = masks.shape[2]
-            if h != target_height or w != target_width:
-                bbox = [
-                    int(bbox[0] * w / target_width),
-                    int(bbox[1] * h / target_height),
-                    int(bbox[2] * w / target_width),
-                    int(bbox[3] * h / target_height), ]
-            bbox[0] = round(bbox[0]) if round(bbox[0]) > 0 else 0
-            bbox[1] = round(bbox[1]) if round(bbox[1]) > 0 else 0
-            bbox[2] = round(bbox[2]) if round(bbox[2]) < w else w
-            bbox[3] = round(bbox[3]) if round(bbox[3]) < h else h
-
-            # IoUs = torch.zeros(len(masks), dtype=torch.float32)
-            bbox_area = (bbox[3] - bbox[1]) * (bbox[2] - bbox[0])
-
-            masks_area = torch.sum(masks[:, bbox[1]:bbox[3], bbox[0]:bbox[2]], dim=(1, 2))
-            orig_masks_area = torch.sum(masks, dim=(1, 2))
-
-            union = bbox_area + orig_masks_area - masks_area
-            IoUs = masks_area / union
-            max_iou_index.append(int(torch.argmax(IoUs)))
-        max_iou_index = list(set(max_iou_index))
-        return np.array(masks[max_iou_index].cpu().numpy())
-
-    def point_prompt(self, points, pointlabel):  # numpy 
-        if self.results == None:
-            return []
-        masks = self._format_results(self.results[0], 0)
-        target_height = self.img.shape[0]
-        target_width = self.img.shape[1]
-        h = masks[0]['segmentation'].shape[0]
-        w = masks[0]['segmentation'].shape[1]
-        if h != target_height or w != target_width:
-            points = [[int(point[0] * w / target_width), int(point[1] * h / target_height)] for point in points]
-        onemask = np.zeros((h, w))
-        masks = sorted(masks, key=lambda x: x['area'], reverse=True)
-        for i, annotation in enumerate(masks):
-            if type(annotation) == dict:
-                mask = annotation['segmentation']
-            else:
-                mask = annotation
-            for i, point in enumerate(points):
-                if mask[point[1], point[0]] == 1 and pointlabel[i] == 1:
-                    onemask[mask] = 1
-                if mask[point[1], point[0]] == 1 and pointlabel[i] == 0:
-                    onemask[mask] = 0
-        onemask = onemask >= 1
-        return np.array([onemask])
 
     def text_prompt(self, text):
         if self.results == None:

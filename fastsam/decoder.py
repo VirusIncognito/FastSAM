@@ -1,8 +1,7 @@
 from .model import FastSAM
 import numpy as np
 from PIL import Image
-import clip
-from typing import Optional, List, Tuple, Union
+from typing import Optional
 
 
 class FastSAMDecoder:
