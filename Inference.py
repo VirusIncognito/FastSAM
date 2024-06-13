@@ -1,7 +1,7 @@
 import os
 import torch
 from PIL import Image
-from fastsam import FastSAM, FastSAMPrompt
+from fsam.fastsam import FastSAM, FastSAMPrompt
 
 def get_predefined_input(image, text_prompt):
     inputs = {}
