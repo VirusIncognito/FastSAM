@@ -5,7 +5,7 @@ from fsam.fastsam import FastSAM, FastSAMPrompt
 
 def get_predefined_input(image, text_prompt):
     inputs = {}
-    inputs["model_path"] = "./weights/FastSAM.pt"
+    inputs["model_path"] = "./fsam/weights/FastSAM.pt"
     inputs["img_path"] = image
     inputs["imgsz"] = 1024
     inputs["iou"] = 0.9
@@ -60,7 +60,7 @@ def create_mask(args):
 
 if __name__ == "__main__":
     image_path = "C:\\Users\\KIIT\\Desktop\\BITS Pilani Research Docs\\MODEL\\images\\dogs.jpg"  # Replace with your image path
-    text_prompt = "a black dog"  # Replace with your text prompt
+    text_prompt = "the black dog"  # Replace with your text prompt
     args = get_predefined_input(image_path, text_prompt)
     output_mask_location = create_mask(args)
     print(f"Output mask saved at: {output_mask_location}")
